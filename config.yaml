@@ -1,0 +1,2 @@
+# LogSentry settings. Filled in during Phase 2 (step 2.1).
+# Never put secrets here: webhook URLs and API keys go in .env.

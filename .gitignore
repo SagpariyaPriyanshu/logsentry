@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Secrets (webhook URLs, API keys)
+.env
+
+# Databases and generated data
+*.db
+sample_logs/*.log
+sample_logs/*.json
+
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / OS
+.vscode/
+.DS_Store
