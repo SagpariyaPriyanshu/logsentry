@@ -97,26 +97,128 @@ def inject_attacks():
     return lines
 
 
+# def main():
+#     random.seed(42)   # same "random" output every run, so results are repeatable
+
+#     lines = []
+#     for d in range(DAYS):
+#         lines += normal_day(START + timedelta(days=d))
+#     lines += inject_attacks()
+#     lines.sort(key=lambda pair: pair[0])   # real logs are in time order
+
+#     out = Path("sample_logs/auth.log")
+#     out.parent.mkdir(exist_ok=True)
+#     text = "\n".join(line for _, line in lines) + "\n"
+#     out.write_text(text, encoding="utf-8", newline="\n")
+
+#     print(f"Wrote {len(lines)} lines to {out}")
+#     print("Hidden attacks (answer key):")
+#     print("  1. Brute force: 40 failures from 203.0.113.45 on 7 Oct ~14:00, then bob logs in")
+#     print("  2. Privilege escalation: 'backdoor' user created and added to sudo by bob")
+#     print("  3. Unusual login: charlie at 03:12 on 9 Oct")
+
+# ---------------------------------------------------------------------------
+# Web server access log (Apache/Nginx "combined" format)
+# ---------------------------------------------------------------------------
+
+VISITOR_IPS = [f"192.0.2.{n}" for n in range(10, 60)]   # 192.0.2.x is another example range
+SCANNER_IP = "198.51.100.23"
+SQLMAP_IP = "198.51.100.77"
+
+NORMAL_PAGES = ["/", "/index.html", "/about", "/contact", "/products",
+                "/products.php?id=3", "/products.php?id=7", "/blog",
+                "/css/style.css", "/js/app.js", "/images/logo.png"]
+BROWSERS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+]
+SCAN_PATHS = ["/wp-admin", "/wp-login.php", "/.env", "/.git/config", "/phpmyadmin",
+              "/admin", "/backup.zip", "/config.php", "/server-status", "/cgi-bin/test.cgi",
+              "/../../etc/passwd", "/shell.php", "/db.sql", "/old", "/test"]
+
+
+def web_fmt(ts):
+    """Format a time the way access logs do: '07/Oct/2026:14:00:00 +1100'."""
+    return ts.strftime("%d/%b/%Y:%H:%M:%S") + " +1100"
+
+
+def web_line(ts, ip, method, path, status, size, agent):
+    """One line in combined log format."""
+    return (f'{ip} - - [{web_fmt(ts)}] "{method} {path} HTTP/1.1" '
+            f'{status} {size} "-" "{agent}"')
+
+
+def normal_web_day(day):
+    """One day of ordinary website visitors. Returns (time, line) pairs."""
+    lines = []
+    visits = random.randint(120, 200)
+    for _ in range(visits):
+        ts = day + timedelta(hours=random.randint(7, 22), minutes=random.randint(0, 59),
+                             seconds=random.randint(0, 59))
+        ip = random.choice(VISITOR_IPS)
+        if random.random() < 0.03:   # 3% of requests hit a page that doesn't exist
+            lines.append((ts, web_line(ts, ip, "GET", "/favicon.ico", 404, 196,
+                                       random.choice(BROWSERS))))
+        else:
+            lines.append((ts, web_line(ts, ip, "GET", random.choice(NORMAL_PAGES), 200,
+                                       random.randint(800, 12000), random.choice(BROWSERS))))
+    return lines
+
+
+def inject_web_attacks():
+    """Web attacks hidden in access.log. This is the web answer key."""
+    lines = []
+
+    # Attack 4: Nikto scanner on Thu 8 Oct at 22:30, probing for weak spots
+    ts = datetime(2026, 10, 8, 22, 30, 0)
+    nikto = "Mozilla/5.00 (Nikto/2.5.0) (Evasions:None) (Test:000123)"
+    for i in range(60):
+        path = SCAN_PATHS[i % len(SCAN_PATHS)]
+        lines.append((ts, web_line(ts, SCANNER_IP, "GET", path, 404, 196, nikto)))
+        ts += timedelta(seconds=random.randint(1, 3))
+
+    # Attack 5: sqlmap testing the products page for SQL injection on Sat 10 Oct
+    ts = datetime(2026, 10, 10, 2, 5, 0)
+    sqlmap = "sqlmap/1.8.11#stable (https://sqlmap.org)"
+    payloads = ["3'", "3' OR 1=1--", "3 AND 1=1", "3 AND 1=2", "3 UNION SELECT NULL--",
+                "3 UNION SELECT NULL,NULL--", "3' AND SLEEP(5)--", "3; DROP TABLE users--"]
+    for payload in payloads:
+        path = "/products.php?id=" + payload.replace(" ", "%20")
+        lines.append((ts, web_line(ts, SQLMAP_IP, "GET", path, 500, 312, sqlmap)))
+        ts += timedelta(seconds=random.randint(1, 2))
+    return lines
+
+
+def write_log(path, lines):
+    """Sort (time, line) pairs by time and write them as a Linux-style log file."""
+    lines.sort(key=lambda pair: pair[0])
+    out = Path(path)
+    out.parent.mkdir(exist_ok=True)
+    out.write_text("\n".join(line for _, line in lines) + "\n", encoding="utf-8", newline="\n")
+    print(f"Wrote {len(lines):,} lines to {out}")
+
 def main():
     random.seed(42)   # same "random" output every run, so results are repeatable
 
-    lines = []
+    auth_lines = []
     for d in range(DAYS):
-        lines += normal_day(START + timedelta(days=d))
-    lines += inject_attacks()
-    lines.sort(key=lambda pair: pair[0])   # real logs are in time order
+        auth_lines += normal_day(START + timedelta(days=d))
+    auth_lines += inject_attacks()
+    write_log("sample_logs/auth.log", auth_lines)
 
-    out = Path("sample_logs/auth.log")
-    out.parent.mkdir(exist_ok=True)
-    text = "\n".join(line for _, line in lines) + "\n"
-    out.write_text(text, encoding="utf-8", newline="\n")
+    web_lines = []
+    for d in range(DAYS):
+        web_lines += normal_web_day(START + timedelta(days=d))
+    web_lines += inject_web_attacks()
+    write_log("sample_logs/access.log", web_lines)
 
-    print(f"Wrote {len(lines)} lines to {out}")
     print("Hidden attacks (answer key):")
     print("  1. Brute force: 40 failures from 203.0.113.45 on 7 Oct ~14:00, then bob logs in")
     print("  2. Privilege escalation: 'backdoor' user created and added to sudo by bob")
     print("  3. Unusual login: charlie at 03:12 on 9 Oct")
-
+    print("  4. Web scan: Nikto from 198.51.100.23 on 8 Oct ~22:30, 60 requests, all 404")
+    print("  5. SQL injection: sqlmap from 198.51.100.77 on 10 Oct ~02:05, 8 requests")
 
 if __name__ == "__main__":
     main()
