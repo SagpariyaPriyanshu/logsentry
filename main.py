@@ -11,6 +11,8 @@ from pathlib import Path
 
 from logsentry.parsers.auth_log import parse_auth_file
 from logsentry.parsers.web_log import parse_web_file
+from logsentry.config import load_config
+from logsentry.detectors import run_all_detectors
 
 
 def analyze(args):
@@ -44,6 +46,12 @@ def analyze(args):
     for ip, count in by_ip.most_common(5):
         print(f"  {ip:<15} {count:>5}")
 
+    alerts = run_all_detectors(events, load_config(args.config))
+    print(f"\n{len(alerts)} alerts:")
+    for alert in alerts:
+        print(f"  [{alert.severity.upper():<6}] {alert.timestamp:%Y-%m-%d %H:%M}  "
+              f"{alert.rule}: {alert.message}")
+
     return 0
 
 
@@ -64,6 +72,10 @@ def build_parser():
     analyze_cmd.add_argument(
         "--web", action="store_true",
         help="the file is a web server access log, not auth.log",
+    )
+    analyze_cmd.add_argument(
+        "--config", default="config.yaml",
+        help="path to the settings file (default: config.yaml)",
     )
     analyze_cmd.set_defaults(func=analyze)
 
