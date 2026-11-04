@@ -1,2 +1,25 @@
-# LogSentry settings. Filled in during Phase 2 (step 2.1).
-# Never put secrets here: webhook URLs and API keys go in .env.
+# LogSentry settings. Change these numbers to tune the detection rules
+# without touching any code. Never put secrets (webhook URLs, API keys) here.
+
+brute_force:
+  max_failures: 5          # this many failed logins from one IP...
+  window_minutes: 2        # ...within this many minutes = attack
+
+unusual_login:
+  work_hours: [7, 19]      # logins before 7:00 or from 19:00 are "off-hours"
+  learning_days: 3         # days of history used to learn each user's normal IPs
+
+privilege:
+  sudo_allowlist: [alice]  # users who are expected to run sudo
+
+web_scan:
+  max_404s: 20             # this many 404s from one IP...
+  window_minutes: 5        # ...within this many minutes = scan
+  bad_paths: ["/wp-admin", "/.env", "/.git", "../", "' OR 1=1", "UNION SELECT"]
+  bad_agents: ["sqlmap", "nikto"]
+
+alerting:
+  min_severity: high       # only send notifications at or above this level
+
+database:
+  path: logsentry.db
