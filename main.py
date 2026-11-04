@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 
 from logsentry.parsers.auth_log import parse_auth_file
+from logsentry.parsers.web_log import parse_web_file
 
 
 def analyze(args):
@@ -19,14 +20,24 @@ def analyze(args):
         print(f"Error: file not found: {path}")
         return 1
 
-    events, skipped = parse_auth_file(path, year=args.year)
+    # if the args is web 
+    if args.web:
+        events, skipped = parse_web_file(path)
+    else:
+        events, skipped = parse_auth_file(path, year=args.year)
 
     print(f"Parsed {len(events):,} events, {skipped:,} lines skipped")
 
-    print("\nEvents by type:")
-    by_type = Counter(e.event_type for e in events)
-    for event_type, count in by_type.most_common():
-        print(f"  {event_type:<15} {count:>5}")
+    if args.web:
+        print("\nRequests by status code:")
+        by_status = Counter(e.details["status"] for e in events)
+        for status, count in sorted(by_status.items()):
+            print(f"  {status:<15} {count:>5}")
+    else:
+        print("\nEvents by type:")
+        by_type = Counter(e.event_type for e in events)
+        for event_type, count in by_type.most_common():
+            print(f"  {event_type:<15} {count:>5}")
 
     print("\nTop 5 IP addresses:")
     by_ip = Counter(e.ip for e in events if e.ip)
@@ -49,6 +60,10 @@ def build_parser():
     analyze_cmd.add_argument(
         "--year", type=int, default=None,
         help="year for auth.log timestamps (default: current year)",
+    )
+    analyze_cmd.add_argument(
+        "--web", action="store_true",
+        help="the file is a web server access log, not auth.log",
     )
     analyze_cmd.set_defaults(func=analyze)
 
