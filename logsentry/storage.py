@@ -1,4 +1,5 @@
 """Save events and alerts to a SQLite database, and read them back."""
+import json 
 import sqlite3
 
 SCHEMA = """
@@ -37,3 +38,36 @@ def init_db(path):
     conn.row_factory = sqlite3.Row      # rows can be read by column name: row["ip"]
     conn.executescript(SCHEMA)
     return conn
+
+def save_events(conn, events):
+    """Store events, skipping any already in the database. Returns how many were new."""
+    rows = [
+        (e.timestamp.isoformat(), e.source, e.event_type, e.ip, e.user,
+         json.dumps(e.details), e.raw)
+        for e in events
+    ]
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT OR IGNORE INTO events (ts, source, event_type, ip, user, details, raw) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    return conn.total_changes - before
+
+
+def save_alerts(conn, alerts):
+    """Store alerts. Returns how many were saved."""
+    rows = [
+        (a.timestamp.isoformat(), a.rule, a.severity, a.message, a.ip, a.user,
+         json.dumps(a.evidence))
+        for a in alerts
+    ]
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT INTO alerts (ts, rule, severity, message, ip, user, evidence) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    return conn.total_changes - before
