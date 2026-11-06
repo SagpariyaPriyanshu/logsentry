@@ -55,19 +55,27 @@ def save_events(conn, events):
     conn.commit()
     return conn.total_changes - before
 
+def already_alerted(conn, alert):
+    """True if this exact alert (same rule, time and message) is already stored."""
+    row = conn.execute(
+        "SELECT 1 FROM alerts WHERE rule = ? AND ts = ? AND message = ? LIMIT 1",
+        (alert.rule, alert.timestamp.isoformat(), alert.message),
+    ).fetchone()
+    return row is not None
+
 
 def save_alerts(conn, alerts):
-    """Store alerts. Returns how many were saved."""
+    """Store alerts we haven't stored before. Returns how many were new."""
+    new_alerts = [a for a in alerts if not already_alerted(conn, a)]
     rows = [
         (a.timestamp.isoformat(), a.rule, a.severity, a.message, a.ip, a.user,
          json.dumps(a.evidence))
-        for a in alerts
+        for a in new_alerts
     ]
-    before = conn.total_changes
     conn.executemany(
         "INSERT INTO alerts (ts, rule, severity, message, ip, user, evidence) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
     conn.commit()
-    return conn.total_changes - before
+    return len(new_alerts)

@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 
 from logsentry.models import Alert, Event
-from logsentry.storage import init_db, save_alerts, save_events
+from logsentry.storage import init_db, save_alerts, save_events, already_alerted
 
 TS = datetime(2026, 10, 7, 14, 0, 0)
 
@@ -67,3 +67,29 @@ def test_save_alerts():
     row = conn.execute("SELECT * FROM alerts").fetchone()
     assert row["notified"] == 0
     assert json.loads(row["evidence"]) == ["line 1", "line 2"]
+
+def make_alert(message="40 failed logins", ts=TS):
+    return Alert(timestamp=ts, rule="brute_force", severity="high",
+                 message=message, ip="203.0.113.45")
+
+
+def test_already_alerted():
+    conn = init_db(":memory:")
+    assert not already_alerted(conn, make_alert())
+    save_alerts(conn, [make_alert()])
+    assert already_alerted(conn, make_alert())
+
+
+def test_saving_same_alerts_twice_stores_them_once():
+    conn = init_db(":memory:")
+    alerts = [make_alert(), make_alert("New user account created: backdoor")]
+    assert save_alerts(conn, alerts) == 2
+    assert save_alerts(conn, alerts) == 0
+    assert count(conn, "alerts") == 2
+
+
+def test_similar_alert_at_another_time_is_kept():
+    conn = init_db(":memory:")
+    save_alerts(conn, [make_alert()])
+    next_day = TS.replace(day=8)
+    assert save_alerts(conn, [make_alert(ts=next_day)]) == 1
