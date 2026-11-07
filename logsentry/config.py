@@ -1,5 +1,6 @@
 """Load LogSentry settings from config.yaml, filling gaps with defaults."""
 import copy
+import os
 from pathlib import Path
 
 import yaml
@@ -42,3 +43,25 @@ def load_config(path="config.yaml"):
         user_settings = yaml.safe_load(f) or {}   # an empty file gives None
 
     return merge(DEFAULTS, user_settings)
+
+# discord webhook configuration 
+def load_env_file(path=".env"):
+    """Copy KEY=value lines from a .env file into environment variables.
+
+    Secrets live in .env, which Git ignores, so they never reach GitHub.
+    A variable that is already set is left alone, so a real environment wins.
+    """
+    path = Path(path)
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue                      # skip blanks, comments and junk
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def get_discord_webhook():
+    """Return the Discord webhook URL, or None if it isn't configured."""
+    return os.environ.get("LOGSENTRY_DISCORD_WEBHOOK") or None

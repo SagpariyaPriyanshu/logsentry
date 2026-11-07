@@ -13,6 +13,7 @@ from logsentry.parsers.auth_log import parse_auth_file
 from logsentry.parsers.web_log import parse_web_file
 from logsentry.config import load_config
 from logsentry.detectors import run_all_detectors
+from logsentry.storage import init_db, save_alerts, save_events
 
 
 def analyze(args):
@@ -46,11 +47,19 @@ def analyze(args):
     for ip, count in by_ip.most_common(5):
         print(f"  {ip:<15} {count:>5}")
 
-    alerts = run_all_detectors(events, load_config(args.config))
+    cfg = load_config(args.config)
+    alerts = run_all_detectors(events, cfg)
     print(f"\n{len(alerts)} alerts:")
     for alert in alerts:
         print(f"  [{alert.severity.upper():<6}] {alert.timestamp:%Y-%m-%d %H:%M}  "
               f"{alert.rule}: {alert.message}")
+
+    db_path = cfg["database"]["path"]
+    conn = init_db(db_path)
+    new_events = save_events(conn, events)
+    new_alerts = save_alerts(conn, alerts)
+    conn.close()
+    print(f"\nSaved {new_events:,} new events and {new_alerts} new alerts to {db_path}")
 
     return 0
 
