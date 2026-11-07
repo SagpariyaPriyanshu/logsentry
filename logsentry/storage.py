@@ -1,6 +1,7 @@
 """Save events and alerts to a SQLite database, and read them back."""
 import json 
 import sqlite3
+import pandas as pd
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -79,3 +80,25 @@ def save_alerts(conn, alerts):
     )
     conn.commit()
     return len(new_alerts)
+
+def load_events_df(conn, since=None):
+    """Read events into a pandas DataFrame, oldest first. `since` limits it to newer events."""
+    return _load_df(conn, "events", since)
+
+
+def load_alerts_df(conn, since=None):
+    """Read alerts into a pandas DataFrame, oldest first. `since` limits it to newer alerts."""
+    return _load_df(conn, "alerts", since)
+
+
+def _load_df(conn, table, since):
+    query = f"SELECT * FROM {table}"     # table is always our own fixed name
+    params = []
+    if since is not None:
+        query += " WHERE ts >= ?"
+        params.append(since.isoformat())
+    query += " ORDER BY ts"
+
+    df = pd.read_sql(query, conn, params=params)
+    df["ts"] = pd.to_datetime(df["ts"])  # text back into real timestamps
+    return df

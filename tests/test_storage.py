@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 
 from logsentry.models import Alert, Event
-from logsentry.storage import init_db, save_alerts, save_events, already_alerted
+from logsentry.storage import (already_alerted, init_db, load_alerts_df, load_events_df, save_alerts, save_events)
 
 TS = datetime(2026, 10, 7, 14, 0, 0)
 
@@ -93,3 +93,18 @@ def test_similar_alert_at_another_time_is_kept():
     save_alerts(conn, [make_alert()])
     next_day = TS.replace(day=8)
     assert save_alerts(conn, [make_alert(ts=next_day)]) == 1
+
+def test_load_events_df():
+    conn = init_db(":memory:")
+    save_events(conn, [make_event(raw="line 1"), make_event(raw="line 2")])
+    df = load_events_df(conn)
+    assert len(df) == 2
+    assert df["ts"].iloc[0] == TS          # a real timestamp again, not text
+
+
+def test_load_alerts_df_since():
+    conn = init_db(":memory:")
+    save_alerts(conn, [make_alert(), make_alert(ts=TS.replace(day=8))])
+    df = load_alerts_df(conn, since=TS.replace(day=8))
+    assert len(df) == 1
+    assert df["ts"].iloc[0].day == 8
