@@ -1,6 +1,7 @@
 from datetime import datetime
-
-from logsentry.alerts import DISCORD_LIMIT, format_alert
+from unittest.mock import Mock, patch
+import requests
+from logsentry.alerts import DISCORD_LIMIT, format_alert, send_discord
 from logsentry.models import Alert
 
 TS = datetime(2026, 10, 7, 14, 0, 0)
@@ -41,3 +42,44 @@ def test_no_ip_line_when_alert_has_no_ip():
                                    rule="privilege_escalation"))
     assert "IP:" not in text
     assert "`bob`" in text
+
+URL = "https://discord.com/api/webhooks/123/fake"
+
+
+def fake_response(status, body=None):
+    response = Mock()
+    response.status_code = status
+    response.ok = 200 <= status < 300
+    response.json.return_value = body or {}
+    return response
+
+
+@patch("logsentry.alerts.requests.post")
+def test_send_success(mock_post):
+    mock_post.return_value = fake_response(204)
+    assert send_discord(URL, "hello") is True
+    sent = mock_post.call_args.kwargs
+    assert sent["json"]["content"] == "hello"
+    assert sent["json"]["allowed_mentions"] == {"parse": []}
+    assert sent["timeout"] == 5
+
+
+@patch("logsentry.alerts.requests.post")
+def test_send_rejected_returns_false(mock_post):
+    mock_post.return_value = fake_response(404)
+    assert send_discord(URL, "hello") is False
+
+
+@patch("logsentry.alerts.requests.post")
+def test_network_error_returns_false_instead_of_crashing(mock_post):
+    mock_post.side_effect = requests.ConnectionError("no internet")
+    assert send_discord(URL, "hello") is False
+
+
+@patch("logsentry.alerts.time.sleep")
+@patch("logsentry.alerts.requests.post")
+def test_rate_limit_waits_then_retries(mock_post, mock_sleep):
+    mock_post.side_effect = [fake_response(429, {"retry_after": 1.5}), fake_response(204)]
+    assert send_discord(URL, "hello") is True
+    mock_sleep.assert_called_once_with(1.5)
+    assert mock_post.call_count == 2
