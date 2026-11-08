@@ -1,7 +1,9 @@
 """Save events and alerts to a SQLite database, and read them back."""
+from datetime import datetime
 import json 
 import sqlite3
 import pandas as pd
+from logsentry.models import Alert
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -102,3 +104,25 @@ def _load_df(conn, table, since):
     df = pd.read_sql(query, conn, params=params)
     df["ts"] = pd.to_datetime(df["ts"])  # text back into real timestamps
     return df
+
+def get_unnotified_alerts(conn):
+    """Return (id, Alert) pairs for every alert not yet sent, oldest first."""
+    rows = conn.execute("SELECT * FROM alerts WHERE notified = 0 ORDER BY ts").fetchall()
+    return [
+        (row["id"], Alert(
+            timestamp=datetime.fromisoformat(row["ts"]),
+            rule=row["rule"],
+            severity=row["severity"],
+            message=row["message"],
+            ip=row["ip"],
+            user=row["user"],
+            evidence=json.loads(row["evidence"] or "[]"),
+        ))
+        for row in rows
+    ]
+
+
+def mark_notified(conn, alert_id):
+    """Record that an alert was sent, so it is never sent again."""
+    conn.execute("UPDATE alerts SET notified = 1 WHERE id = ?", (alert_id,))
+    conn.commit()

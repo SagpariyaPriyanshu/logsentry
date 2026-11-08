@@ -2,12 +2,14 @@
 import time
 
 import requests
+from logsentry.storage import get_unnotified_alerts, mark_notified
 
 DISCORD_LIMIT = 2000        # Discord rejects messages longer than this
 EVIDENCE_LINES = 3          # how many raw log lines to include
 MAX_LINE = 300              # cut very long log lines down to this
 
 SEVERITY_ICONS = {"high": "🔴", "medium": "🟠", "low": "🟡"}
+SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 
 
 def format_alert(alert):
@@ -70,3 +72,16 @@ def send_discord(webhook_url, text, max_retries=2):
         print(f"Discord: rejected with HTTP {response.status_code}")
         return False
     return False
+
+def dispatch(conn, webhook_url, min_severity="high"):
+    """Send every unsent alert at or above `min_severity`. Returns how many were sent."""
+    threshold = SEVERITY_RANK[min_severity]
+    sent = 0
+    for alert_id, alert in get_unnotified_alerts(conn):
+        if SEVERITY_RANK.get(alert.severity, 0) < threshold:
+            continue                          # too minor to page anyone
+        if send_discord(webhook_url, format_alert(alert)):
+            mark_notified(conn, alert_id)
+            sent += 1
+        # if sending failed, it stays unsent and is retried on the next run
+    return sent

@@ -11,7 +11,8 @@ from pathlib import Path
 
 from logsentry.parsers.auth_log import parse_auth_file
 from logsentry.parsers.web_log import parse_web_file
-from logsentry.config import load_config
+from logsentry.alerts import dispatch
+from logsentry.config import load_config, get_discord_webhook, load_env_file
 from logsentry.detectors import run_all_detectors
 from logsentry.storage import init_db, save_alerts, save_events
 
@@ -58,8 +59,16 @@ def analyze(args):
     conn = init_db(db_path)
     new_events = save_events(conn, events)
     new_alerts = save_alerts(conn, alerts)
-    conn.close()
     print(f"\nSaved {new_events:,} new events and {new_alerts} new alerts to {db_path}")
+
+    load_env_file()
+    webhook = get_discord_webhook()
+    if webhook:
+        sent = dispatch(conn, webhook, cfg["alerting"]["min_severity"])
+        print(f"Sent {sent} alerts to Discord")
+    else:
+        print("Discord not configured (set LOGSENTRY_DISCORD_WEBHOOK in .env); no alerts sent")
+    conn.close()
 
     return 0
 
